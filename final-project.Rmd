@@ -1,0 +1,223 @@
+```{r, echo = FALSE}
+#Reading in Tables
+circ_raw = read.csv('proposal/circuits.csv', header = FALSE)
+colnames(circ_raw) = c('circuitId', 'circuitRef', 'name', 'location', 'country', 'lat', 'lng', 'alt', 'url')
+
+constResu_raw = read.csv('proposal/constructor_results.csv', header = FALSE)
+colnames(constResu_raw) = c('constructorResultsId', 'raceId', 'constructorId', 'points', 'status')
+
+constStan_raw = read.csv('proposal/constructor_standings.csv', header = FALSE)
+colnames(constStan_raw) = c('constructorStandingsId', 'raceId', 'constructorId', 'points', 'position', 'positionText', 'wins')
+
+const_raw = read.csv('proposal/constructors.csv', header = FALSE)
+colnames(const_raw) = c('constructorId', 'constructorRef', 'name', 'nationality', 'url')
+
+drivStan_raw = read.csv('proposal/driver_standings.csv', header = FALSE)
+colnames(drivStan_raw) = c('driverStandingsId', 'raceId', 'driverId', 'points', 'positionText', 'wins')
+
+driv_raw = read.csv('proposal/driver.csv', header = FALSE)
+colnames(driv_raw) = c('driverId', 'driverRef', 'number', 'code', 'forename', 'surname', 'dob', 'nationality', 'url')
+
+lapTime_raw = read.csv('proposal/lap_times.csv', header = FALSE)
+colnames(lapTime_raw) = c('raceId', 'driverId', 'lap', 'position', 'time', 'milliseconds')
+
+pitStop_raw = read.csv('proposal/pit_stops.csv', header = FALSE)
+colnames(pitStop_raw) = c('raceId', 'driverId', 'stop', 'lap', 'time', 'duration', 'milliseconds')
+
+qual_raw = read.csv('proposal/qualifying.csv', header = FALSE)
+colnames(qual_raw) = c('qualifyId', 'raceId', 'driverId', 'constructorId', 'number', 'position', 'q1', 'q2', 'q3')
+
+race_raw = read.csv('proposal/races.csv', header = FALSE)
+colnames(race_raw) = c('raceId', 'year', 'round', 'circuitId', 'name', 'date', 'time', 'url')
+
+resu_raw = read.csv('proposal/results.csv', header = FALSE)
+colnames(resu_raw) = c('resultId', 'raceId', 'driverId', 'constructorId', 'number', 'grid', 'position', 'positionText', 'positionOrder', 'points', 'laps', 'time', 'milliseconds', 'fastestLap', 'rank', 'fastestLapTime', 'fastestLapSpeed', 'statusId')
+
+seas_raw = read.csv('proposal/seasons.csv', header = FALSE)
+colnames(seas_raw) = c('year', 'url')
+
+stat_raw = read.csv('proposal/status.csv', header = FALSE)
+colnames(stat_raw) = c('statusId', 'status')
+
+#Merging Results, Drivers, Constructors and Race
+library(dplyr)
+
+new_points1 = left_join(resu_raw, driv_raw, by = "driverId")
+new_points2 = left_join(new_points1, const_raw, by = "constructorId")
+new_points3 = left_join(new_points2, race_raw, by = "raceId")
+
+#Modern Points System
+library(dplyr)
+library(ggplot2)
+new_points4 = subset(new_points3, select = c(year, name.y, forename, surname, driverRef, name.x, constructorRef, positionOrder, points))
+new_points4$points_new = 0
+for(i in seq_along(new_points4$points_new)) {
+  new_points4$points_new[i] = 
+    switch(as.character(new_points4$positionOrder[i]),
+         "1" = 25,
+         "2" = 18,
+         "3" = 15,
+         "4" = 12,
+         "5" = 10,
+         "6" = 8,
+         "7" = 6,
+         "8" = 4,
+         "9" = 2,
+         "10" = 1,
+         0
+  )
+}
+       
+colnames(new_points4) = c('Year', 'Race Name', 'Driver First Name', 'Driver Last Name', 'Driver Reference', 'Constructor Name', 'Constructor Reference', 'Finishing Position', 'Original Points', 'New Points')
+new_points5 = head(subset(new_points4, select = c('Year', 'Race Name', 'Driver First Name', 'Driver Last Name', 'Constructor Name', 'Finishing Position', 'Original Points', 'New Points')))
+
+#Points Total + Points Average Graphs
+career_total_points = aggregate(new_points4$'New Points', b = list('Driver Reference' = new_points4$'Driver Reference'), FUN = sum)
+career_race_count = as.data.frame(table(new_points4$'Driver Reference'))
+colnames(career_race_count) = c('Driver Reference', 'Race Count')
+
+#Calculating Average
+career_points = left_join(career_total_points, career_race_count, by = "Driver Reference")
+career_points$averagepoints = career_points$x / career_points$'Race Count'
+colnames(career_points) = c('driverRef', 'totalpoints', 'racecount', 'averagepoints')
+
+#Final Table
+career_points2 = inner_join(career_points, driv_raw, by = "driverRef")
+career_points3 = subset(career_points2, select = c(forename, surname, driverRef, racecount, totalpoints, averagepoints))
+career_points3[,6] = round(career_points3[,6],2)
+ 
+#Career Total Points
+career_points3_totalpoints = filter(career_points3, totalpoints>1735)
+career_total_points_graph = ggplot(career_points3_totalpoints, aes(x = reorder(surname, -totalpoints), y = totalpoints)) + geom_col(fill = 'light blue', colour = 'dark blue') + theme(legend.position="none") + geom_text(aes(label=totalpoints), vjust=1.6, color="dark blue", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Total Points in Career", title = "Total Points in Career (Top 10 Drivers)")
+career_total_points_graph
+
+#Career Race Count
+career_points3_racetotal = filter(career_points3, racecount>230)
+career_race_racetotal_graph = ggplot(career_points3_racetotal, aes(x = reorder(surname, -racecount), y = racecount)) + geom_col(fill = 'light green', color = "dark green") + theme(legend.position = "none") + geom_text(aes(label = racecount), vjust=1.6, color="dark green", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Total Races in Career", title = "Total Races in Career (Top 10 Drivers)")
+career_race_racetotal_graph
+
+#Average Points per Race
+career_points3_average = filter(career_points3, averagepoints > 10.5 & racecount > 10)
+career_race_average = ggplot(career_points3_average, aes(x = reorder(surname, -averagepoints), y = averagepoints)) + geom_col(fill = 'light yellow', colour = 'dark orange') + theme(legend.position = "none") + geom_text(aes(label = averagepoints), vjust=1.6, color="dark orange", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Average Points per Race", title = "Average Points per Race (Top 10 Drivers)")
+career_race_average
+
+
+colnames(career_points3) = c('Driver First Name', 'Driver Last Name', 'Driver Reference', 'Career Total Races Count', 'Career Total Points', 'Average Points per Race')
+
+#Constructor Totals
+constructor_total_points = aggregate(new_points4$'New Points', b = list('Constructor Reference' = new_points4$'Constructor Reference'), FUN = sum)
+constructor_race_count = as.data.frame(table(new_points4$'Constructor Reference'))
+colnames(constructor_race_count) = c('Constructor Reference', 'Race Count')
+
+#Calculating Average
+constructor_points = left_join(constructor_total_points, constructor_race_count, by = "Constructor Reference")
+constructor_points$averagepoints = constructor_points$x / constructor_points$'Race Count'
+colnames(constructor_points) = c('constructorRef', 'totalpoints', 'racecount', 'averagepoints')
+
+#Final Table
+constructor_points2 = inner_join(constructor_points, const_raw, by = "constructorRef")
+constructor_points3 = subset(constructor_points2, select = c(name, constructorRef, racecount, totalpoints, averagepoints))
+constructor_points3[,5] = round(constructor_points3[,5],2)
+
+
+#Career Total Points
+constructor_points3_totalpoints = filter(constructor_points3, totalpoints>2500)
+constructor_total_points_graph = ggplot(constructor_points3_totalpoints, aes(x = reorder(name, -totalpoints), y = totalpoints)) + geom_col(fill = 'light blue', colour = 'dark blue') + theme(legend.position="none") + geom_text(aes(label=totalpoints), vjust=1.6, color="dark blue", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Total Points in All Seasons", title = "Total Points in Seasons (Top 10 Constructors)")
+constructor_total_points_graph
+
+#Career Race Count
+constructor_points3_racetotal = filter(constructor_points3, racecount>600)
+constructor_race_racetotal_graph = ggplot(constructor_points3_racetotal, aes(x = reorder(name, -racecount), y = racecount)) + geom_col(fill = 'light green', color = "dark green") + theme(legend.position = "none") + geom_text(aes(label = racecount), vjust=1.6, color="dark green", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Total Races in All Seasons", title = "Total Races in All Seasons (Top 10 Constructors)")
+constructor_race_racetotal_graph
+
+#Average Points per Race
+constructor_points3_average = filter(constructor_points3, averagepoints > 6.45 & racecount > 10)
+constructor_race_average = ggplot(constructor_points3_average, aes(x = reorder(name, -averagepoints), y = averagepoints)) + geom_col(fill = 'light yellow', colour = 'dark orange') + theme(legend.position = "none") + geom_text(aes(label = averagepoints), vjust=1.6, color="dark orange", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Average Points per Race", title = "Average Points per Race (Top 10 Constructors)")
+constructor_race_average
+
+
+colnames(constructor_points3) = c('Constructor Name', 'Constructor Reference', 'All Seasons Total Races Count', 'All Seasons Total Points', 'Average Points per Race')
+
+#Merged File with Status
+status1 = left_join(new_points3, stat_raw, by = "statusId")
+
+#Disqualifications
+disqualifications = subset(status1, statusId == 2)
+#disq_year = as.data.frame(table(disqualifications$'year'))
+
+disq_year = ggplot(disqualifications, aes(year)) + geom_area(stat = "bin", bins = 69, fill = 'light pink', color = 'dark red') + theme(legend.position = "none") + labs(x = "Year", y = "Disqualifications (Count)", title = "Number of Disqualifications per Year") + scale_x_continuous(limits = c(1950, 2018)) 
+disq_year
+
+disq_driver = as.data.frame(table(disqualifications$surname))
+disq_driver2 = filter(disq_driver, Freq > 2)
+disq_driver_graph = ggplot(disq_driver2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'light pink', color = 'dark red') + theme(legend.position="none") + geom_text(aes(label=Freq), vjust=1.6, color="dark red", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Disqualifications in Career", title = "Drivers with Most Disqualifications (Top 10 + Ties Drivers)")
+disq_driver_graph
+
+disq_const = as.data.frame(table(disqualifications$name.x))
+disq_const2 = filter(disq_const, Freq > 3)
+disq_const_graph = ggplot(disq_const2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'light pink', color = 'dark red') + theme(legend.position="none") + geom_text(aes(label=Freq), vjust=1.6, color="dark red", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Disqualifications in All Seasons", title = "Constructors with Most Disqualifications (Top 10 Constructors)")
+disq_const_graph
+
+disq_track = as.data.frame(table(disqualifications$name.y))
+disq_track2 = filter(disq_track, Freq > 5)
+disq_track_graph = ggplot(disq_track2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'light pink', color = 'dark red') + theme(legend.position="none") + geom_text(aes(label=Freq), vjust=1.6, color="dark red", position = position_dodge(0.9), size=3.5) + labs(x = "Track Name", y = "Disqualifications in All Seasons", title = "Tracks with Most Disqualifications (Top 10 Tracks)")
+disq_track_graph
+
+#Debut by Drivers
+sorted_date = new_points3[with(new_points3, order(date)), ]
+debut = sorted_date[(!duplicated(sorted_date$driverRef)),]
+
+#Debut by Constructor
+debut_constructor = sorted_date[(!duplicated(sorted_date$constructorRef)),]
+
+#New Drivers per Year
+debut_year = as.data.frame(table(debut$year))
+debut_year_graph = ggplot(debut, aes(x = year)) + geom_freqpoly(bins = 69, color = 'purple') + theme(legend.position="none") + labs(x = "Year", y = "New Drivers (Count)", title = "Number of New Drivers per Year") + scale_x_continuous(limits = c(1950, 2018)) 
+debut_year_graph
+
+#New Constructors per Year
+debut_const_year = as.data.frame(table(debut_constructor$year))
+debut_const_graph = ggplot(debut_constructor, aes(x = year)) + geom_freqpoly(bins = 69, color = 'purple') + theme(legend.position="none") + labs(x = "Year", y = "New Constructors (Count)", title = "Number of New Constructors per Year") + scale_x_continuous(limits = c(1950, 2018)) 
+debut_const_graph
+
+# Most Fastest Laps
+fastest_lap = filter(new_points3, rank == 1)
+#Driver
+fastest_lap_driver = as.data.frame(table(fastest_lap$surname))
+fastest_lap_driver2 = filter(fastest_lap_driver, Freq > 9)
+fastest_lap_driver_graph = ggplot(fastest_lap_driver2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'light grey', color = 'black') + theme(legend.position = "none") + geom_text(aes(label = Freq), vjust=1.6, color="black", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Fastest Laps (Count)", title = "Number of Fastest Laps by Driver (Top 10 Drivers)")
+fastest_lap_driver_graph
+
+#Constructor
+fastest_lap_constructor = as.data.frame(table(fastest_lap$name.x))
+fastest_lap_constructor2 = filter(fastest_lap_constructor, Freq > 2)
+fastest_lap_constructor_graph = ggplot(fastest_lap_constructor2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'light grey', color = 'black') + theme(legend.position = "none") + geom_text(aes(label = Freq), vjust=1.6, color="black", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Fastest Laps (Count)", title = "Number of Fastest Laps by Constructor (Top 10 + Ties Constructors)")
+fastest_lap_constructor_graph
+
+#Most Pole Position, Qualifying Position = 1
+qualifying_lap = filter(new_points3, grid == 1)
+
+#Driver
+qualifying_lap_driver = as.data.frame(table(qualifying_lap$surname))
+qualifying_lap_driver2 = filter(qualifying_lap_driver, Freq > 26)
+qualifying_lap_driver_graph = ggplot(qualifying_lap_driver2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'orange', color = 'brown') + theme(legend.position = "none") + geom_text(aes(label = Freq), vjust=1.6, color="brown", position = position_dodge(0.9), size=3.5) + labs(x = "Driver Name", y = "Pole Laps (Count)", title = "Number of Pole Laps by Driver (Top 10 Drivers)")
+qualifying_lap_driver_graph
+
+#Constructor
+qualifying_lap_constructor = as.data.frame(table(qualifying_lap$name.x))
+qualifying_lap_constructor2 = filter(qualifying_lap_constructor, Freq > 16)
+qualifying_lap_constructor_graph = ggplot(qualifying_lap_constructor2, aes(x = reorder(Var1, -Freq), y = Freq)) + geom_col(fill = 'orange', color = 'brown') + theme(legend.position = "none") + geom_text(aes(label = Freq), vjust=1.6, color="brown", position = position_dodge(0.9), size=3.5) + labs(x = "Constructor Name", y = "Pole Laps (Count)", title = "Number of Pole Laps by Constructor (Top 10 + Ties Constructors)")
+qualifying_lap_constructor_graph
+
+career_points = subset(career_points3, select = c('Driver First Name', 'Driver Last Name', 'Career Total Points'))
+
+career_races = subset(career_points3, select = c('Driver First Name', 'Driver Last Name', 'Career Total Races Count'))
+
+average_points = subset(career_points3, select = c('Driver First Name', 'Driver Last Name', 'Average Points per Race'))
+
+constructor_points = subset(constructor_points3, select = c('Constructor Name', 'All Seasons Total Points'))
+
+constructor_races = subset(constructor_points3, select = c('Constructor Name', 'All Seasons Total Races Count'))
+
+constructor_average = subset(constructor_points3, select = c('Constructor Name', 'Average Points per Race'))
+```
